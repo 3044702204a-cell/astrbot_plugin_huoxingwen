@@ -1,5 +1,9 @@
 # 火星文转换
 
+[![version](https://img.shields.io/github/v/release/3044702204a-cell/astrbot_plugin_huoxingwen?label=version&color=informational)](https://github.com/3044702204a-cell/astrbot_plugin_huoxingwen/releases)
+[![AstrBot](https://img.shields.io/badge/AstrBot-4.x-2b6cb0)](https://github.com/AstrBotDevs/AstrBot)
+[![license](https://img.shields.io/github/license/3044702204a-cell/astrbot_plugin_huoxingwen)](LICENSE)
+
 把 AstrBot 里模型回复整段转成火星文再发出去，效果类似
 <http://huoxingwen.qianwanku.com/>。
 
