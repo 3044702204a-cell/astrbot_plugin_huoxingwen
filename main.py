@@ -181,10 +181,15 @@ class HuoxingwenPlugin(Star):
 
     # ------------------------------------------------------------------ 流式补丁
     def _install_stream_hooks(self, event_cls: type) -> None:
+        """装 send_streaming 补丁；插件被重载时换成新实例的包装。"""
         for cls in getattr(event_cls, "__mro__", (event_cls,)):
-            original = cls.__dict__.get("send_streaming")
-            if original is None or getattr(original, "_huoxing_patched", False):
+            current = cls.__dict__.get("send_streaming")
+            if current is None:
                 continue
+            if getattr(current, "_huoxing_owner", None) is self:
+                continue
+            # 上一次安装留下的包装要剥掉，否则重载后仍指向旧实例（配置不会更新）
+            original = getattr(current, "__wrapped__", current)
             setattr(cls, "send_streaming", self._make_send_streaming(original))
 
     def _make_send_streaming(self, original):
@@ -198,6 +203,7 @@ class HuoxingwenPlugin(Star):
                 **kwargs,
             )
 
+        send_streaming._huoxing_owner = self
         send_streaming._huoxing_patched = True
         send_streaming.__wrapped__ = original
         return send_streaming

@@ -19,6 +19,8 @@ from main import HuoxingwenPlugin  # noqa: E402
 from astrbot.api.message_components import Plain  # noqa: E402
 from astrbot.core.message.message_event_result import MessageChain  # noqa: E402
 
+from huoxing import to_martian  # noqa: E402
+
 
 class FakeEvent:
     """最小可用的事件替身：只要有 set_extra / get_extra / get_message_type。"""
@@ -95,6 +97,12 @@ def main() -> None:
     again = run_stream(plugin, FakeEvent(), ["我爱你"])
     assert again == ["莪嬡沵"], again
     print("idempotent install ->", again)
+
+    # 插件重载后（新实例）要换成新实例的包装，配置才会跟着新实例走
+    reloaded = make_plugin(mode="traditional")
+    trad = run_stream(reloaded, FakeEvent(), ["我爱你"])
+    assert trad == [to_martian("我爱你", mode="traditional")], trad
+    print("reloaded instance ->", trad)
 
     # 关掉会话后原样透传
     plugin._session_state[""] = False
