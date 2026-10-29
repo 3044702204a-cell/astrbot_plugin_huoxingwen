@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from astrbot.api import AstrBotConfig, logger
-from astrbot.api.event import AstrMessageEvent, MessageChain, ResultContentType, filter
+from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.message_components import Plain
 from astrbot.api.platform import MessageType
 from astrbot.api.star import Context, Star, StarTools
@@ -150,7 +150,7 @@ class HuoxingwenPlugin(Star):
             if event.get_extra("_huoxing_skip", False):
                 return
             if event.get_extra("_huoxing_stream", False):
-                # 流式输出已经在 wrap_streaming 里逐片转换，避免二次转换
+                # 流式输出已经在 send_streaming 补丁里逐片转换，避免二次转换
                 return
             if not self.is_active(event):
                 return
@@ -166,41 +166,67 @@ class HuoxingwenPlugin(Star):
         except Exception:
             logger.exception("[火星文] 转换回复时出错，已跳过本次转换。")
 
-    @filter.on_llm_response()
-    async def wrap_streaming(self, event: AstrMessageEvent, response=None) -> None:
-        """开启流式输出时，装饰钩子不生效，这里直接包裹流。"""
+    @filter.on_llm_request()
+    async def install_stream_hook(self, event: AstrMessageEvent, request=None) -> None:
+        """真正调用模型前，给当前平台的事件类装好流式转换钩子。
+
+        流式输出时 AstrBot 会把分片直接交给平台适配器，发送前的
+        on_decorating_result 拿到的是已经发完的完整文本，改动不会生效，
+        所以只能在 send_streaming 这一层把生成器包一层。
+        """
         try:
-            if not self.is_active(event):
-                return
-            if not bool(self._cfg("only_llm", True)):
-                return
-            result = event.get_result()
-            if result is None or result.async_stream is None:
-                return
-            if result.result_content_type != ResultContentType.STREAMING_RESULT:
-                return
-            if getattr(result, "_huoxing_wrapped", False):
-                return
-            if not self._roll():
-                return
-
-            original_stream = result.async_stream
-            plugin = self
-
-            async def _stream():
-                async for chunk in original_stream:
-                    try:
-                        if isinstance(chunk, MessageChain):
-                            plugin._convert_chain_inplace(chunk)
-                    except Exception:
-                        logger.exception("[火星文] 流式分片转换失败，已原样输出。")
-                    yield chunk
-
-            result.async_stream = _stream()
-            setattr(result, "_huoxing_wrapped", True)
-            event.set_extra("_huoxing_stream", True)
+            self._install_stream_hooks(type(event))
         except Exception:
-            logger.exception("[火星文] 包裹流式输出失败。")
+            logger.exception("[火星文] 安装流式转换钩子失败。")
+
+    # ------------------------------------------------------------------ 流式补丁
+    def _install_stream_hooks(self, event_cls: type) -> None:
+        for cls in getattr(event_cls, "__mro__", (event_cls,)):
+            original = cls.__dict__.get("send_streaming")
+            if original is None or getattr(original, "_huoxing_patched", False):
+                continue
+            setattr(cls, "send_streaming", self._make_send_streaming(original))
+
+    def _make_send_streaming(self, original):
+        plugin = self
+
+        async def send_streaming(self, generator, *args, **kwargs):
+            return await original(
+                self,
+                plugin._convert_stream(self, generator),
+                *args,
+                **kwargs,
+            )
+
+        send_streaming._huoxing_patched = True
+        send_streaming.__wrapped__ = original
+        return send_streaming
+
+    async def _convert_stream(self, event: AstrMessageEvent, generator):
+        """逐片转换流式输出；不转换时原样透传。"""
+        active = False
+        try:
+            active = (
+                self.is_active(event)
+                and bool(self._cfg("only_llm", True))
+                and self._roll()
+            )
+        except Exception:
+            logger.exception("[火星文] 判定流式转换失败，已原样输出。")
+
+        if not active:
+            async for chunk in generator:
+                yield chunk
+            return
+
+        event.set_extra("_huoxing_stream", True)
+        async for chunk in generator:
+            try:
+                if getattr(chunk, "type", None) not in {"reasoning", "audio_chunk"}:
+                    self._convert_chain_inplace(getattr(chunk, "chain", None) or [])
+            except Exception:
+                logger.exception("[火星文] 流式分片转换失败，已原样输出。")
+            yield chunk
 
     # ------------------------------------------------------------------ 指令
     @filter.command("火星文", alias={"hxw", "火文"})
