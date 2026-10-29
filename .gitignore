@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+data/
+session_state.json
+.idea/
+.vscode/
+.DS_Store

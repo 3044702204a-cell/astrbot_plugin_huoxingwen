@@ -1,0 +1,69 @@
+{
+  "enabled": {
+    "type": "bool",
+    "description": "总开关",
+    "default": true,
+    "hint": "关闭后本插件的所有转换都会停止，但不会卸载插件。"
+  },
+  "mode": {
+    "type": "string",
+    "description": "转换模式",
+    "options": ["huoxing", "traditional", "mix"],
+    "default": "huoxing",
+    "hint": "huoxing: 火星文（与 huoxingwen.qianwanku.com 同码表）| traditional: 繁体字 | mix: 火星文与繁体随机混排，更花哨"
+  },
+  "only_llm": {
+    "type": "bool",
+    "description": "只转换模型输出",
+    "default": true,
+    "hint": "开启后只处理 LLM / Agent 的回复，其它插件或指令输出的文本保持原样。"
+  },
+  "probability": {
+    "type": "int",
+    "description": "单条消息转换概率（%）",
+    "default": 100,
+    "hint": "100 表示每条回复都转换；调低后部分回复保持原样，更像真人打字。",
+    "slider": {
+      "min": 0,
+      "max": 100,
+      "step": 1
+    }
+  },
+  "decorate": {
+    "type": "bool",
+    "description": "附加装饰符号",
+    "default": false,
+    "hint": "在转换结果首尾随机加上 ゞ ﹏ 灬 之类的符号，更像老火星文。"
+  },
+  "decoration_chars": {
+    "type": "string",
+    "description": "装饰符号候选",
+    "default": "ゞ﹏ヾ灬のヽ〆゛☆★誮",
+    "hint": "开启装饰符号后从中随机取用，可以自己增删。"
+  },
+  "protect_code": {
+    "type": "bool",
+    "description": "保留代码块",
+    "default": true,
+    "hint": "```代码块``` 与 `行内代码` 原样保留，避免把代码转成乱码。"
+  },
+  "protect_url": {
+    "type": "bool",
+    "description": "保留链接",
+    "default": true,
+    "hint": "http/https 链接和 www 开头的地址不参与转换。"
+  },
+  "protect_at": {
+    "type": "bool",
+    "description": "保留 @ 与 CQ 码",
+    "default": true,
+    "hint": "@某人 以及 [CQ:at,qq=...] 原样保留，防止 @ 失效。"
+  },
+  "scope": {
+    "type": "string",
+    "description": "生效场景",
+    "options": ["both", "group", "private"],
+    "default": "both",
+    "hint": "both: 群聊与私聊 | group: 仅群聊 | private: 仅私聊"
+  }
+}

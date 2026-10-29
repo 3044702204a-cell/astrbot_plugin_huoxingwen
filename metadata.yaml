@@ -1,0 +1,8 @@
+name: astrbot_plugin_huoxingwen
+display_name: 火星文转换
+short_desc: 把模型最终输出整段转成火星文再发送
+desc: 发送前把模型回复转换成火星文（或繁体字、混排），码表与 huoxingwen.qianwanku.com 一致，支持保留代码块、链接与 @，并支持按会话开关。
+author: "30447"
+version: "1.0.0"
+repo: "https://github.com/3044702204a-cell/astrbot_plugin_huoxingwen"
+astrbot_version: ">=4.0,<5"
