@@ -7,7 +7,7 @@
 把 AstrBot 里模型回复整段转成火星文再发出去，效果类似
 <http://huoxingwen.qianwanku.com/>。
 
-版本 `1.1.0` ｜ 兼容 AstrBot `4.x`（`>=4.0,<5`） ｜ 流式 / 非流式都可以转
+版本 `1.2.0` ｜ 兼容 AstrBot `4.x`（`>=4.0,<5`） ｜ 流式 / 非流式都可以转
 
 ## 安装
 
@@ -40,6 +40,7 @@ git clone https://github.com/3044702204a-cell/astrbot_plugin_huoxingwen.git data
   `send_streaming` 包装，逐片转换后再交给平台；同一个会话只装一次，转换过的消息
   会打标记，避免和发送前钩子重复转换。
 - 分片中 `reasoning`（思维链）与 `audio_chunk`（语音流）不参与转换。
+- 流式下只做字符映射：`decorate`（首尾装饰符号）在流式输出时会跳过，否则每个分片都会被套一遍符号；想要装饰就把流式关掉。
 - 代码块、行内代码、链接、`@某人`、CQ 码会被屏蔽后原样拼回，避免把代码和
   链接转成乱码。
 

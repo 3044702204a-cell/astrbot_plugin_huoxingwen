@@ -116,6 +116,12 @@ def main() -> None:
     assert passthrough == ["我爱你"], passthrough
     print("probability 0 ->", passthrough)
 
+    # 开了装饰符号时，流式也不能每片都加一遍
+    decorated = make_plugin(decorate=True, decoration_chars="☆★")
+    out = run_stream(decorated, FakeEvent(), ["我爱你", "今天天气不错"])
+    assert not (set("".join(out)) & set("☆★")), out
+    print("stream decorate skipped ->", out)
+
     print("ok")
 
 

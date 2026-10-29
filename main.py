@@ -105,14 +105,17 @@ class HuoxingwenPlugin(Star):
         return self._scope_ok(event)
 
     # ------------------------------------------------------------------ 转换
-    def _convert(self, text: str) -> str:
+    def _convert(self, text: str, *, decorate: bool | None = None) -> str:
+        use_decorate = (
+            bool(self._cfg("decorate", False)) if decorate is None else bool(decorate)
+        )
         return to_martian(
             text,
             mode=str(self._cfg("mode", "huoxing")),
             protect_code=bool(self._cfg("protect_code", True)),
             protect_url=bool(self._cfg("protect_url", True)),
             protect_at=bool(self._cfg("protect_at", True)),
-            decorate=bool(self._cfg("decorate", False)),
+            decorate=use_decorate,
             decoration_chars=str(self._cfg("decoration_chars", DEFAULT_DECORATIONS)),
             rng=self._rng,
         )
@@ -129,7 +132,7 @@ class HuoxingwenPlugin(Star):
             return False
         return self._rng.randint(1, 100) <= probability
 
-    def _convert_chain_inplace(self, chain) -> int:
+    def _convert_chain_inplace(self, chain, *, decorate: bool | None = None) -> int:
         converted = 0
         for comp in chain:
             if not isinstance(comp, Plain):
@@ -137,7 +140,7 @@ class HuoxingwenPlugin(Star):
             text = getattr(comp, "text", "") or ""
             if not text.strip():
                 continue
-            new_text = self._convert(text)
+            new_text = self._convert(text, decorate=decorate)
             if new_text != text:
                 comp.text = new_text
                 converted += 1
@@ -229,7 +232,11 @@ class HuoxingwenPlugin(Star):
         async for chunk in generator:
             try:
                 if getattr(chunk, "type", None) not in {"reasoning", "audio_chunk"}:
-                    self._convert_chain_inplace(getattr(chunk, "chain", None) or [])
+                    # 流式逐片转换时不开首尾装饰，否则每个分片都会被加一遍符号
+                    self._convert_chain_inplace(
+                        getattr(chunk, "chain", None) or [],
+                        decorate=False,
+                    )
             except Exception:
                 logger.exception("[火星文] 流式分片转换失败，已原样输出。")
             yield chunk
