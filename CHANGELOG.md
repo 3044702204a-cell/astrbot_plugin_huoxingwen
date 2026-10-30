@@ -1,5 +1,11 @@
 # 更新日志
 
+## 1.2.2
+
+- 发布用版本：插件市场里 `1.2.1` 已占用且版本号不可复用，本版内容与 1.2.1 相同，另补元数据。
+- `metadata.yaml` 补 `support_platforms`（aiocqhttp / qq_official / telegram / discord / slack / lark / dingtalk / wecom / kook / satori / webchat），市场详情页不再显示「支持平台：-」。
+- `README.md` 版本号与自测命令更新；「兼容性」一节写清注册表兜底的实际做法（1.2.1 起会读 `astrbot.core.star` 的注册表，读不到就降级告警）。
+
 ## 1.2.1
 
 - 修复「handler 未绑定实例」导致的连环报错：插件以停用状态被加载时，AstrBot 不会实例化插件类，注册表里的 `on_decorating_result` / `on_llm_request` 保持未绑定函数，被调用时 `self` 收到的是 event，于是每条消息都会抛 `TypeError: missing 1 required positional argument: 'event'` 与 `AttributeError: 'AiocqhttpMessageEvent' object has no attribute '_install_stream_hooks'`。

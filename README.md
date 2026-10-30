@@ -7,7 +7,7 @@
 把 AstrBot 里模型回复整段转成火星文再发出去，效果类似
 <http://huoxingwen.qianwanku.com/>。
 
-版本 `1.2.0` ｜ 兼容 AstrBot `4.x`（`>=4.0,<5`） ｜ 流式 / 非流式都可以转
+版本 `1.2.2` ｜ 兼容 AstrBot `4.x`（`>=4.0,<5`） ｜ 流式 / 非流式都可以转 ｜ 平台无关
 
 ## 安装
 
@@ -46,10 +46,13 @@ git clone https://github.com/3044702204a-cell/astrbot_plugin_huoxingwen.git data
 
 ## 兼容性
 
-- AstrBot `>=4.0,<5`：只依赖公开 API（`astrbot.api` 的 `Star`、`filter`、
-  `AstrMessageEvent`），不碰核心内部模块。
+- AstrBot `>=4.0,<5`：只用 `astrbot.api` 的公开接口（`Star`、`filter`、
+  `AstrMessageEvent`）干活；另外会尝试读一次 `astrbot.core.star` 里的插件注册表，
+  仅用于「插件以停用态被加载、handler 没绑到实例」时兜底，读不到就降级为只告警一次，
+  不影响转换。
 - 平台无关：任何会走 `send_streaming` 的适配器（WebChat、Telegram、QQ 官方私聊等）
-  都按同样方式转换；不支持流式的平台自动走非流式那条路。
+  都按同样方式转换；不支持流式的平台自动走非流式那条路。`metadata.yaml` 的
+  `support_platforms` 列出了已验证的平台，没列的平台大概率也能用。
 - 与其它改写结果的插件共存：只改动 `Plain` 文本段，遇到非模型输出默认不处理
   （`only_llm` 可调）。
 
@@ -80,6 +83,8 @@ git clone https://github.com/3044702204a-cell/astrbot_plugin_huoxingwen.git data
 # 在插件目录下，用 AstrBot 自带的 Python
 set PYTHONPATH=E:\AstrBot\backend\app
 E:\AstrBot\backend\python\python.exe tests\test_convert.py
+E:\AstrBot\backend\python\python.exe tests\test_stream_patch.py
+E:\AstrBot\backend\python\python.exe tests\test_unbound_call.py
 ```
 
 ## 许可
