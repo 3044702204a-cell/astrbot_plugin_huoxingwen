@@ -1,5 +1,13 @@
 # 更新日志
 
+## 1.2.1
+
+- 修复「handler 未绑定实例」导致的连环报错：插件以停用状态被加载时，AstrBot 不会实例化插件类，注册表里的 `on_decorating_result` / `on_llm_request` 保持未绑定函数，被调用时 `self` 收到的是 event，于是每条消息都会抛 `TypeError: missing 1 required positional argument: 'event'` 与 `AttributeError: 'AiocqhttpMessageEvent' object has no attribute '_install_stream_hooks'`。
+  - 四个 handler 入口统一做调用形式归一化：检测到「未绑定调用」时从注册表取真实实例，取不到就只告警一次并静默跳过，不再每条消息刷异常。
+  - 新增 `initialize()`：插件加载完成后主动把本插件所有 handler 绑到当前实例，顺手修掉旧版加载分支漏绑定、热重载后指向旧实例的情况。
+  - 指令在实例缺失时回复一句「请在 WebUI 里重新启用本插件」，而不是静默失败。
+- 新增 `tests/test_unbound_call.py`：覆盖未绑定调用、实例缺失、实例存在、正常绑定四种路径。
+
 ## 1.2.0
 
 - 流式逐片转换时不再加首尾装饰符号（`decorate`）。之前每来一个分片都会套一遍 `ゞ ﹏ 灬`，整段读起来全是符号；现在流式下只做字符映射，装饰只在非流式整段发送时生效。
