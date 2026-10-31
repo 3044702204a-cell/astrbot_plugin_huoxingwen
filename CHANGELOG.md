@@ -1,5 +1,9 @@
 # 更新日志
 
+## 1.3.1
+
+- 修复 AstrBot v4.29.1 起每条 LLM 请求报 TypeError：install_stream_hook() takes from 1 to 2 positional arguments but 3 were given。OnLLMRequestEvent 钩子框架固定按 handler(event, req) 调用，形参里补上 req（2026-10-31）
+
 ## 1.3.0
 
 - 版本号换新。插件市场对同一插件用过的版本号永久占用，`1.2.1`、`1.2.2`、`1.2.3` 都已提交过、不能再用，所以本次内容与 `1.2.3` 一致，只把 `metadata.yaml` / `README.md` / 本文件的版本号统一抬到 `1.3.0`。

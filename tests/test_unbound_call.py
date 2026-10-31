@@ -139,6 +139,42 @@ def test_bound_call_still_works() -> None:
     print("bound call ->", event.get_result().chain[0].text)
 
 
+def test_llm_request_hook_accepts_req_arg() -> None:
+    """OnLLMRequestEvent 钩子：框架按 handler(event, req) 调用，必须接住第二个位置参数。
+
+    回归 AstrBot v4.29.1 的 TypeError：
+    install_stream_hook() takes from 1 to 2 positional arguments but 3 were given
+    """
+    plugin = make_plugin()
+    plugin_module.star_map[plugin_module.PLUGIN_MODULE] = FakeMetadata(plugin)
+
+    class StreamEvent(FakeEvent):
+        async def send_streaming(self, generator, use_fallback=False):
+            async for chunk in generator:
+                yield chunk
+
+    req = object()  # ProviderRequest 替身，签名只要求能接住
+    event = StreamEvent("我爱你")
+
+    # 绑定调用：self 是实例，event 是事件
+    asyncio.run(plugin.install_stream_hook(event, req))
+    patched = StreamEvent.__dict__["send_streaming"]
+    assert getattr(patched, "_huoxing_owner", None) is plugin
+
+    plugin_module._restore_patches()
+
+    # 未绑定调用：登录表里没有实例时 self 收到的是 event，req 错位到 event 形参
+    plugin_module.star_map.pop(plugin_module.PLUGIN_MODULE, None)
+    asyncio.run(HuoxingwenPlugin.install_stream_hook(event, req))
+    assert getattr(StreamEvent.__dict__["send_streaming"], "_huoxing_owner", None) is not plugin
+
+    plugin_module.star_map[plugin_module.PLUGIN_MODULE] = FakeMetadata(plugin)
+    asyncio.run(HuoxingwenPlugin.install_stream_hook(event, req))
+    assert getattr(StreamEvent.__dict__["send_streaming"], "_huoxing_owner", None) is plugin
+    plugin_module._restore_patches()
+    print("llm request hook accepts (event, req) -> ok")
+
+
 def test_bind_handlers_is_idempotent() -> None:
     plugin = make_plugin()
     plugin._bind_handlers()  # 注册表为空时应安全返回
@@ -151,6 +187,7 @@ def main() -> None:
     test_command_hint_without_instance()
     test_unbound_call_uses_live_instance()
     test_bound_call_still_works()
+    test_llm_request_hook_accepts_req_arg()
     test_bind_handlers_is_idempotent()
     print("ok")
 

@@ -416,12 +416,20 @@ class HuoxingwenPlugin(Star):
             logger.exception("[火星文] 转换回复时出错，已跳过本次转换。")
 
     @filter.on_llm_request()
-    async def install_stream_hook(self, event: AstrMessageEvent | None = None) -> None:
+    async def install_stream_hook(
+        self,
+        event: AstrMessageEvent | None = None,
+        req: Any = None,
+    ) -> None:
         """真正调用模型前，给当前平台的事件类装好流式转换钩子。
 
         流式输出时 AstrBot 会把分片直接交给平台适配器，发送前的
         on_decorating_result 拿到的是已经发完的完整文本，改动不会生效，
         所以只能在 send_streaming 这一层把生成器包一层。
+
+        注意：这是 OnLLMRequestEvent 钩子，框架固定按
+        ``handler(event, req)`` 调用（req 是 ProviderRequest，本插件用不到），
+        形参少一个就会在运行期抛 TypeError，因此必须显式接住第二个位置参数。
         """
         self, event = _resolve_self(self, event)
         if self is None or event is None:
