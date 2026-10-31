@@ -10,6 +10,7 @@ from __future__ import annotations
 import functools
 import json
 import random
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,9 @@ except Exception:  # pragma: no cover
     star_handlers_registry = None
 
 PLUGIN_NAME = "astrbot_plugin_huoxingwen"
+PLUGIN_MODULE = __name__
+"""主模块的完整模块路径，同时也是 star_map 里登记的键。"""
+
 STATE_FILE = "session_state.json"
 
 ON_WORDS = {"开", "开启", "on", "1", "true", "启用"}
@@ -58,9 +62,106 @@ def _live_instance() -> "HuoxingwenPlugin | None":
     """取当前进程里真正的插件实例。"""
     if not star_map:
         return None
-    metadata = star_map.get(__name__)
+    metadata = star_map.get(PLUGIN_MODULE)
     instance = getattr(metadata, "star_cls", None) if metadata is not None else None
     return instance if isinstance(instance, HuoxingwenPlugin) else None
+
+
+# --------------------------------------------------------------------------- 补丁台账
+# 打在框架类上的 send_streaming 包装不在 handler 注册表里，框架停用/卸载插件时
+# 如果没有回滚干净，包装（以及闭包里抓着的旧实例）会一直活到进程重启，
+# 表现就是「插件已经关了/删了，回复还是火星文」。这里自己记一份台账，按记录精确回滚。
+_CLASS_PATCHES: list[tuple[type, str, Any, Any]] = []
+
+# 插件自己的源文件。被手动删掉目录时靠它发现，最多 2 秒 stat 一次。
+_PLUGIN_FILE = Path(__file__).resolve()
+_FILE_CHECK_INTERVAL = 2.0
+_file_probe: dict[str, Any] = {"checked_at": 0.0, "present": True}
+
+
+def _peel_wrappers(func: Any) -> Any:
+    """剥掉一个函数上叠加的所有 __wrapped__ 包装，返回最底层的原函数。"""
+    seen: set[int] = set()
+    current = func
+    while True:
+        wrapped = getattr(current, "__wrapped__", None)
+        if wrapped is None or id(wrapped) in seen:
+            return current
+        seen.add(id(current))
+        current = wrapped
+
+
+def _record_patch(cls: type, attr: str, original: Any, owner: Any) -> None:
+    _CLASS_PATCHES[:] = [
+        item
+        for item in _CLASS_PATCHES
+        if not (item[0] is cls and item[1] == attr and item[3] is owner)
+    ]
+    _CLASS_PATCHES.append((cls, attr, original, owner))
+
+
+def _instance_alive(instance: Any) -> bool:
+    """这个插件实例是否仍然是「当前有效」的那一份。"""
+    if instance is None:
+        return False
+    try:
+        if not star_map:
+            # 注册表是空的：框架还没跑到这一步（或离线自测），不做判断。
+            return True
+        metadata = star_map.get(PLUGIN_MODULE)
+    except Exception:
+        return True
+    if metadata is None:
+        # 注册表里已经有别的插件，却没有本插件：已被卸载。
+        return False
+    if not getattr(metadata, "activated", True):
+        return False
+    current = getattr(metadata, "star_cls", None)
+    if current is None:
+        # 只有「以停用态加载」才会走到这里，上面的 activated 已经挡过一遍。
+        return True
+    # 重载之后 star_cls 是新实例，旧实例不能再改文本。
+    return current is instance
+
+
+def _plugin_files_present() -> bool:
+    """插件源文件还在不在（防手动删目录后进程里残留）。"""
+    now = time.monotonic()
+    if now - _file_probe["checked_at"] < _FILE_CHECK_INTERVAL:
+        return bool(_file_probe["present"])
+    _file_probe["checked_at"] = now
+    try:
+        _file_probe["present"] = _PLUGIN_FILE.is_file()
+    except OSError:
+        _file_probe["present"] = True
+    return bool(_file_probe["present"])
+
+
+def _restore_patches(owner: Any = None, *, only_dead: bool = False) -> int:
+    """把本插件打在类上的补丁换回原函数，返回回滚数量。
+
+    owner 给定时只回滚这个实例装的补丁；only_dead=True 时只回滚那些
+    「装的实例已经不是当前有效实例」的补丁（重载后清旧账用）。
+    """
+    restored = 0
+    keep: list[tuple[type, str, Any, Any]] = []
+    for cls, attr, original, patch_owner in _CLASS_PATCHES:
+        if owner is not None and patch_owner is not owner:
+            keep.append((cls, attr, original, patch_owner))
+            continue
+        if only_dead and _instance_alive(patch_owner):
+            keep.append((cls, attr, original, patch_owner))
+            continue
+        current = cls.__dict__.get(attr)
+        # 只撤自己的包装，别把别人后装的补丁一起抹了
+        if getattr(current, "_huoxing_owner", None) is patch_owner:
+            try:
+                setattr(cls, attr, original)
+                restored += 1
+            except (AttributeError, TypeError):
+                pass
+    _CLASS_PATCHES[:] = keep
+    return restored
 
 
 def _looks_like_event(obj) -> bool:
@@ -175,14 +276,24 @@ class HuoxingwenPlugin(Star):
             return message_type == MessageType.FRIEND_MESSAGE
         return True
 
-    def is_active(self, event: AstrMessageEvent) -> bool:
-        """当前会话是否需要转换。"""
+    def _alive(self) -> bool:
+        """插件是否还在岗：没停用、没卸载、没被新实例替换、源文件还在。"""
+        return _instance_alive(self) and _plugin_files_present()
+
+    def _enabled_for(self, event: AstrMessageEvent) -> bool:
+        """配置与会话开关是否允许转换（不掷概率）。"""
         if not bool(self._cfg("enabled", True)):
             return False
         flag = self._session_state.get(self._session_key(event))
         if flag is not None:
             return flag
         return self._scope_ok(event)
+
+    def is_active(self, event: AstrMessageEvent) -> bool:
+        """当前会话是否需要转换。"""
+        if not self._alive():
+            return False
+        return self._enabled_for(event)
 
     # ------------------------------------------------------------------ 生命周期
     async def initialize(self) -> None:
@@ -196,7 +307,7 @@ class HuoxingwenPlugin(Star):
     def _bind_handlers(self) -> None:
         if star_handlers_registry is None:
             return
-        module_path = type(self).__module__
+        module_path = PLUGIN_MODULE
         try:
             handlers = star_handlers_registry.get_handlers_by_module_name(module_path)
         except Exception:
@@ -211,6 +322,25 @@ class HuoxingwenPlugin(Star):
                 continue
             raw = current.func if isinstance(current, functools.partial) else current
             handler.handler = functools.partial(raw, self)
+
+    def _unbind_handlers(self) -> None:
+        """把自己绑上去的 handler 解回裸函数，别让注册表一直攥着旧实例。"""
+        if star_handlers_registry is None:
+            return
+        try:
+            handlers = star_handlers_registry.get_handlers_by_module_name(
+                PLUGIN_MODULE,
+            )
+        except Exception:
+            return
+        for handler in handlers:
+            current = handler.handler
+            if (
+                isinstance(current, functools.partial)
+                and current.args
+                and current.args[0] is self
+            ):
+                handler.handler = current.func
 
     # ------------------------------------------------------------------ 转换
     def _convert(self, text: str, *, decorate: bool | None = None) -> str:
@@ -262,6 +392,10 @@ class HuoxingwenPlugin(Star):
             _warn_unbound_once()
             return
         try:
+            if not self._alive():
+                # 已经停用/卸载了：把之前装的包装摘干净，这条回复原样发出去
+                _restore_patches()
+                return
             if event.get_extra("_huoxing_skip", False):
                 return
             if event.get_extra("_huoxing_stream", False):
@@ -294,22 +428,36 @@ class HuoxingwenPlugin(Star):
             _warn_unbound_once()
             return
         try:
+            if not self._alive():
+                _restore_patches()
+                return
+            if not self._enabled_for(event):
+                # 配置关掉了 / 会话关了：别装补丁，已经装过的也撤掉
+                _restore_patches(owner=self)
+                return
             self._install_stream_hooks(type(event))
         except Exception:
             logger.exception("[火星文] 安装流式转换钩子失败。")
 
     # ------------------------------------------------------------------ 流式补丁
     def _install_stream_hooks(self, event_cls: type) -> None:
-        """装 send_streaming 补丁；插件被重载时换成新实例的包装。"""
+        """装 send_streaming 补丁；插件被重载时换成新实例的包装。
+
+        只包事件类实际解析到的那一个实现（MRO 里第一个定义它的类），
+        不往基类上层层叠，回滚时一条记录对一处属性。
+        """
+        _restore_patches(only_dead=True)
         for cls in getattr(event_cls, "__mro__", (event_cls,)):
             current = cls.__dict__.get("send_streaming")
             if current is None:
                 continue
             if getattr(current, "_huoxing_owner", None) is self:
-                continue
-            # 上一次安装留下的包装要剥掉，否则重载后仍指向旧实例（配置不会更新）
-            original = getattr(current, "__wrapped__", current)
+                return
+            # 旧版本/上一次安装留下的包装要剥到底，否则重载后仍指向旧实例
+            original = _peel_wrappers(current)
             setattr(cls, "send_streaming", self._make_send_streaming(original))
+            _record_patch(cls, "send_streaming", original, self)
+            return
 
     def _make_send_streaming(self, original):
         plugin = self
@@ -340,12 +488,19 @@ class HuoxingwenPlugin(Star):
             logger.exception("[火星文] 判定流式转换失败，已原样输出。")
 
         if not active:
+            if not self._alive():
+                _restore_patches()
             async for chunk in generator:
                 yield chunk
             return
 
         event.set_extra("_huoxing_stream", True)
         async for chunk in generator:
+            if not self._alive():
+                # 输出到一半插件被停用/卸载：剩下的原样放行，顺手摘掉补丁
+                _restore_patches()
+                yield chunk
+                continue
             try:
                 if getattr(chunk, "type", None) not in {"reasoning", "audio_chunk"}:
                     # 流式逐片转换时不开首尾装饰，否则每个分片都会被加一遍符号
@@ -416,4 +571,7 @@ class HuoxingwenPlugin(Star):
         yield event.plain_result("\n".join(lines))
 
     async def terminate(self) -> None:
+        """停用 / 卸载 / 重载时收尾：撤掉类补丁、解绑 handler、存会话开关。"""
+        _restore_patches(owner=self)
+        self._unbind_handlers()
         self._save_state()

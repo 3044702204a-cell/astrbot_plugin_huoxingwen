@@ -7,7 +7,7 @@
 把 AstrBot 里模型回复整段转成火星文再发出去，效果类似
 <http://huoxingwen.qianwanku.com/>。
 
-版本 `1.2.2` ｜ 兼容 AstrBot `4.x`（`>=4.0,<5`） ｜ 流式 / 非流式都可以转 ｜ 平台无关
+版本 `1.3.0` ｜ 兼容 AstrBot `4.x`（`>=4.0,<5`） ｜ 流式 / 非流式都可以转 ｜ 平台无关
 
 ## 安装
 
@@ -39,6 +39,10 @@ git clone https://github.com/3044702204a-cell/astrbot_plugin_huoxingwen.git data
   整段文本，改它没用。所以本插件在 `on_llm_request` 时给当前平台的事件类装一个
   `send_streaming` 包装，逐片转换后再交给平台；同一个会话只装一次，转换过的消息
   会打标记，避免和发送前钩子重复转换。
+- 这种类属性补丁不在 handler 注册表里，插件不主动撤就会活到进程重启，于是插件
+  自己拿一份台账（类 / 属性 / 原函数 / 装的实例）：`terminate()` 精确回滚，
+  每次转换前还会重新确认这份实例是否仍是 `star_map` 里那个 `star_cls`，
+  停用、卸载、热重载、手动删目录之后都不会再有残留转换。
 - 分片中 `reasoning`（思维链）与 `audio_chunk`（语音流）不参与转换。
 - 流式下只做字符映射：`decorate`（首尾装饰符号）在流式输出时会跳过，否则每个分片都会被套一遍符号；想要装饰就把流式关掉。
 - 代码块、行内代码、链接、`@某人`、CQ 码会被屏蔽后原样拼回，避免把代码和
@@ -50,6 +54,9 @@ git clone https://github.com/3044702204a-cell/astrbot_plugin_huoxingwen.git data
   `AstrMessageEvent`）干活；另外会尝试读一次 `astrbot.core.star` 里的插件注册表，
   仅用于「插件以停用态被加载、handler 没绑到实例」时兜底，读不到就降级为只告警一次，
   不影响转换。
+- 停用 / 卸载 / 热重载：插件自己回滚打在平台事件类上的 `send_streaming` 包装
+  （详见「原理」最后一节），不依赖框架版本有没有统一回滚；旧版本残留的包装在下次
+  安装补丁时会被剥掉。
 - 平台无关：任何会走 `send_streaming` 的适配器（WebChat、Telegram、QQ 官方私聊等）
   都按同样方式转换；不支持流式的平台自动走非流式那条路。`metadata.yaml` 的
   `support_platforms` 列出了已验证的平台，没列的平台大概率也能用。
@@ -85,6 +92,7 @@ set PYTHONPATH=E:\AstrBot\backend\app
 E:\AstrBot\backend\python\python.exe tests\test_convert.py
 E:\AstrBot\backend\python\python.exe tests\test_stream_patch.py
 E:\AstrBot\backend\python\python.exe tests\test_unbound_call.py
+E:\AstrBot\backend\python\python.exe tests\test_unload_cleanup.py
 ```
 
 ## 许可

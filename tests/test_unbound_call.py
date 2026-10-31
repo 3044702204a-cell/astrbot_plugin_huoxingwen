@@ -60,6 +60,9 @@ class FakeEvent:
 class FakeMetadata:
     def __init__(self, instance) -> None:
         self.star_cls = instance
+        self.activated = True
+        self.name = "astrbot_plugin_huoxingwen"
+        self.module_path = plugin_module.PLUGIN_MODULE
 
 
 def make_plugin() -> HuoxingwenPlugin:
@@ -123,8 +126,13 @@ def test_unbound_call_uses_live_instance() -> None:
 
 
 def test_bound_call_still_works() -> None:
-    """正常绑定路径不能被改坏。"""
+    """正常绑定路径不能被改坏。
+
+    注册表里的 star_cls 就是当前实例（真实运行时永远如此），
+    否则会被当成重载后残留的旧实例而跳过转换。
+    """
     plugin = make_plugin()
+    plugin_module.star_map[plugin_module.PLUGIN_MODULE] = FakeMetadata(plugin)
     event = FakeEvent()
     asyncio.run(plugin.on_decorating_result(event))
     assert event.get_result().chain[0].text != "我爱你"
